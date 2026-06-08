@@ -10,8 +10,11 @@ from os import getenv
 from io import BytesIO
 import html
 from app.helpers import *
+import os
+import uuid
+from werkzeug.utils import secure_filename
 
-
+UPLOAD_FOLDER = os.path.join('app', 'static', 'uploads') 
 # Create the app
 app = Flask(__name__)
 
@@ -35,7 +38,7 @@ def show_welcome():
 def show_all_creatures():
     with connect_db() as db:
         sql = """
-            SELECT id, species, name
+            SELECT id, species, name, image_file
             FROM creatures
         """
         params = ()
@@ -43,7 +46,51 @@ def show_all_creatures():
 
         return render_template("pages/creature_list.jinja", creatures=creatures)
 
+#-----------------------------------------------------------
+# Creature form page 
+#-----------------------------------------------------------
+@app.get("/creature/new")
+def show_creture_form():
 
+    return render_template("pages/creature_form.jinja")
+
+#-----------------------------------------------------------
+# Creature form post 
+#-----------------------------------------------------------
+@app.post("/creature")
+def add_creature():
+    # Get the normal text fields from the form
+    name = request.form.get('name', '').strip()
+    species = request.form.get('species', '').strip()
+   
+    name = html.escape(name)
+    species = html.escape(species)
+
+    # Get the file selected via the form
+    image = request.files.get('image_file', None)
+    if not image or image.filename == '':
+        flash("There was a problem uploading the image", "error")
+        return redirect("/")
+
+    # Sanitise filename and make it unique
+    filename = secure_filename(image.filename)
+    random_prefix = uuid.uuid4().hex[:12]
+    unique_filename = f"{random_prefix}_{filename}"
+
+    # Get the path of the upload folder
+    filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
+
+    # Save file to disk
+    image.save(filepath)
+
+    # Add the form data and the upload filename to the DB
+    with connect_db() as db:
+        sql = "INSERT INTO creatures (name, species, image_file) VALUES (?, ?, ?)"
+        params = (name, species, unique_filename)
+        db.execute(sql, params)
+
+        flash(f"Creature '{name}' added", "success")
+        return redirect("/creature_form")
 #-----------------------------------------------------------
 # Help page - Show some help
 #-----------------------------------------------------------
